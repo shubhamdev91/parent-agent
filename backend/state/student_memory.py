@@ -1,6 +1,8 @@
 """Student memory system — 6 JSON files tracking quiz history, mastery, skills, weak areas."""
 
 import json
+import logging
+import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -8,8 +10,11 @@ from typing import Dict, List, Optional
 
 
 def _read(path: Path) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
 
 
 def _write(path: Path, data: dict):
@@ -40,6 +45,7 @@ class StudentMemory:
     def __init__(self, data_dir: Path):
         self.mem_dir = Path(data_dir) / "student_memory"
         self.mem_dir.mkdir(exist_ok=True)
+        self._lock = threading.Lock()
         self._ensure_files_exist()
 
     def _path(self, filename: str) -> Path:
@@ -60,35 +66,39 @@ class StudentMemory:
         is_partial: bool, feedback: str, conceptual_gap: Optional[str],
         answer_mode: str, time_taken_seconds: int
     ) -> None:
-        ah = _read(self._path("answer_history.json"))
-        ah["answers"].append({
-            "answer_id": str(uuid.uuid4()),
-            "quiz_id": quiz_id,
-            "question_id": question_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "subject": subject,
-            "chapter": chapter,
-            "topic": topic,
-            "question_type": question_type,
-            "question_text": question_text,
-            "student_answer_raw": student_answer,
-            "answer_mode": answer_mode,
-            "correct_answer": correct_answer,
-            "is_correct": is_correct,
-            "is_partial": is_partial,
-            "score_awarded": marks if is_correct else (marks // 2 if is_partial else 0),
-            "max_marks": marks,
-            "conceptual_gap": conceptual_gap,
-            "concepts_tested": concepts_tested,
-            "bloom_level": bloom_level,
-            "skill_tags": skill_tags,
-            "feedback": feedback,
-            "suggest_re_practice": not is_correct,
-            "ocr_used": answer_mode == "image",
-            "ocr_confidence": None,
-        })
-        _write(self._path("answer_history.json"), ah)
-        self._update_topic_tally(subject, chapter, topic, is_correct, bloom_level)
+        with self._lock:
+            ah = _read(self._path("answer_history.json"))
+            ah["answers"].append({
+                "answer_id": str(uuid.uuid4()),
+                "quiz_id": quiz_id,
+                "question_id": question_id,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "subject": subject,
+                "chapter": chapter,
+                "topic": topic,
+                "question_type": question_type,
+                "question_text": question_text,
+                "student_answer_raw": student_answer,
+                "answer_mode": answer_mode,
+                "correct_answer": correct_answer,
+                "is_correct": is_correct,
+                "is_partial": is_partial,
+                "score_awarded": marks if is_correct else (marks // 2 if is_partial else 0),
+                "max_marks": marks,
+                "conceptual_gap": conceptual_gap,
+                "concepts_tested": concepts_tested,
+                "bloom_level": bloom_level,
+                "skill_tags": skill_tags,
+                "feedback": feedback,
+                "suggest_re_practice": not is_correct,
+                "ocr_used": answer_mode == "image",
+                "ocr_confidence": None,
+            })
+            _write(self._path("answer_history.json"), ah)
+            try:
+                self._update_topic_tally(subject, chapter, topic, is_correct, bloom_level)
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Topic tally update failed: {e}")
 
     def _update_topic_tally(self, subject: str, chapter: int, topic: str, is_correct: bool, bloom_level: str):
         tm = _read(self._path("topic_mastery.json"))
@@ -206,53 +216,58 @@ class StudentMemory:
         return areas[:n]
 
     def flag_weak_areas(self, weak_areas_flagged: List[Dict]) -> None:
-        wa = _read(self._path("weak_areas.json"))
-        for flag in weak_areas_flagged:
-            existing = next(
-                (w for w in wa["weak_areas"] if w["concept"] == flag["concept"]),
-                None
-            )
-            if existing:
-                existing.update(flag)
-            else:
-                wa["weak_areas"].append(flag)
-        _write(self._path("weak_areas.json"), wa)
+        with self._lock:
+            wa = _read(self._path("weak_areas.json"))
+            for flag in weak_areas_flagged:
+                existing = next(
+                    (w for w in wa["weak_areas"] if w["concept"] == flag["concept"]),
+                    None
+                )
+                if existing:
+                    existing.update(flag)
+                else:
+                    wa["weak_areas"].append(flag)
+            _write(self._path("weak_areas.json"), wa)
 
     def mark_concept_strong(self, subject: str, chapter: int, topic: str, concept: str) -> None:
-        wa = _read(self._path("weak_areas.json"))
-        wa["weak_areas"] = [
-            w for w in wa["weak_areas"]
-            if not (w["concept"] == concept and w.get("topic") == topic)
-        ]
-        _write(self._path("weak_areas.json"), wa)
+        with self._lock:
+            wa = _read(self._path("weak_areas.json"))
+            wa["weak_areas"] = [
+                w for w in wa["weak_areas"]
+                if not (w["concept"] == concept and w.get("topic") == topic and w.get("subject") == subject)
+            ]
+            _write(self._path("weak_areas.json"), wa)
 
     def update_skill_scores(self, skill_updates: Dict) -> None:
-        sp = _read(self._path("skill_profile.json"))
-        for skill, update in skill_updates.items():
-            if skill in sp["current_scores"]:
-                sp["current_scores"][skill] = max(0, min(100, update.get("new_score", sp["current_scores"][skill])))
-        sp["score_history"].append({
-            "date": date.today().isoformat(),
-            "scores": dict(sp["current_scores"])
-        })
-        sp["last_update"] = datetime.utcnow().isoformat() + "Z"
-        _write(self._path("skill_profile.json"), sp)
+        with self._lock:
+            sp = _read(self._path("skill_profile.json"))
+            for skill, update in skill_updates.items():
+                if skill in sp["current_scores"]:
+                    sp["current_scores"][skill] = max(0, min(100, update.get("new_score", sp["current_scores"][skill])))
+            sp["score_history"].append({
+                "date": date.today().isoformat(),
+                "scores": dict(sp["current_scores"])
+            })
+            sp["last_update"] = datetime.utcnow().isoformat() + "Z"
+            _write(self._path("skill_profile.json"), sp)
 
     def update_topic_mastery(self, update: Dict) -> None:
-        tm = _read(self._path("topic_mastery.json"))
-        topic_name = update.get("topic")
-        entry = next((t for t in tm["topics"] if t["topic_name"] == topic_name), None)
-        if entry:
-            entry["current_mastery_score"] = update.get("new_mastery", entry["current_mastery_score"])
-            entry["trend"] = update.get("trend", entry["trend"])
-            entry["bloom_level_reached"] = update.get("bloom_level_reached", entry["bloom_level_reached"])
-            _write(self._path("topic_mastery.json"), tm)
+        with self._lock:
+            tm = _read(self._path("topic_mastery.json"))
+            topic_name = update.get("topic")
+            entry = next((t for t in tm["topics"] if t["topic_name"] == topic_name), None)
+            if entry:
+                entry["current_mastery_score"] = update.get("new_mastery", entry["current_mastery_score"])
+                entry["trend"] = update.get("trend", entry["trend"])
+                entry["bloom_level_reached"] = update.get("bloom_level_reached", entry["bloom_level_reached"])
+                _write(self._path("topic_mastery.json"), tm)
 
     def log_evolution_note(self, quiz_id: str, note: str) -> None:
-        el = _read(self._path("evolution_log.json"))
-        el["snapshots"].append({
-            "quiz_id": quiz_id,
-            "date": date.today().isoformat(),
-            "note": note
-        })
-        _write(self._path("evolution_log.json"), el)
+        with self._lock:
+            el = _read(self._path("evolution_log.json"))
+            el["snapshots"].append({
+                "quiz_id": quiz_id,
+                "date": date.today().isoformat(),
+                "note": note
+            })
+            _write(self._path("evolution_log.json"), el)
