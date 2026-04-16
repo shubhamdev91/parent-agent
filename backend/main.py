@@ -35,7 +35,8 @@ from telegram.ext import (
 )
 from backend.bot.handlers import (
     start_handler, photo_handler, voice_handler,
-    text_message_handler, callback_handler
+    text_message_handler, callback_handler,
+    revision_quiz_start, quick_quiz_select, reveal_answer_callback,
 )
 
 
@@ -63,9 +64,14 @@ def create_bot_app():
     # Text handler — quiz answers via text
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     
-    # Callback handler — inline keyboard buttons
+    # Specific callback handlers — registered before generic fallback
+    app.add_handler(CallbackQueryHandler(revision_quiz_start, pattern="^revision_quiz_start$"))
+    app.add_handler(CallbackQueryHandler(quick_quiz_select, pattern="^quick_quiz_select$"))
+    app.add_handler(CallbackQueryHandler(reveal_answer_callback, pattern="^reveal_answer\\|"))
+
+    # Callback handler — inline keyboard buttons (generic fallback)
     app.add_handler(CallbackQueryHandler(callback_handler))
-    
+
     return app
 
 

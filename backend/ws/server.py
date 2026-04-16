@@ -102,3 +102,28 @@ async def emit_idle():
     """Return TV to idle state."""
     await sio.emit("idle", {})
     print("[WS] Emitted idle")
+
+
+async def emit_teaching_message(message: str, emotion: str):
+    """Push teaching agent message to TV dashboard."""
+    from datetime import datetime
+    await sio.emit("teaching:message", {
+        "role": "agent",
+        "text": message,
+        "emotion": emotion,
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+async def emit_reveal_answer(quiz_id: str, question_index: int, evaluation: dict):
+    """Emit Mom's answer reveal to TV dashboard."""
+    await sio.emit("quiz:reveal_answer", {
+        "quiz_id": quiz_id,
+        "question_index": question_index,
+        "evaluation": evaluation
+    })
+
+
+async def emit_analytics_refresh(quiz_id: str):
+    """Trigger TV analytics refresh after quiz completion."""
+    await sio.emit("analytics:refresh", {"quiz_id": quiz_id})

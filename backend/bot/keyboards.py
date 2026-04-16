@@ -8,6 +8,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("📸 Send Homework Photo", callback_data="menu_homework")],
         [InlineKeyboardButton("📝 Quiz Mode", callback_data="menu_quiz")],
+        [InlineKeyboardButton("✨ Quick Quiz", callback_data="quick_quiz_select")],
+        [InlineKeyboardButton("📚 Revision Quiz", callback_data="revision_quiz_start")],
         [InlineKeyboardButton("💡 Explain a Topic", callback_data="menu_explain")],
         [InlineKeyboardButton("📊 Show Timeline on TV", callback_data="menu_tv_timeline")],
     ]

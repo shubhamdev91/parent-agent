@@ -24,7 +24,15 @@ from backend.ws.server import (
     emit_quiz_question, emit_quiz_answer_result, emit_quiz_complete,
     emit_show_visual, emit_idle
 )
-from backend.config import TEMP_DIR
+from backend.config import TEMP_DIR, DATA_DIR
+from backend.state.student_memory import StudentMemory
+from backend.ai.question_evaluator import QuestionEvaluator
+from backend.ai.skill_extractor import extract_skills
+from backend.ai.teaching_agent import generate_teaching_message
+from backend.ws.server import emit_teaching_message, emit_reveal_answer, emit_analytics_refresh
+
+_student_memory = StudentMemory(DATA_DIR)
+_question_evaluator = QuestionEvaluator(DATA_DIR)
 
 
 # --- In-memory session state (per chat) ---
@@ -825,3 +833,87 @@ async def _finish_quiz_message(update, context, session, quiz):
         parse_mode="Markdown",
         reply_markup=quiz_endscreen_keyboard()
     )
+
+
+# ============================================================
+# NEW HANDLERS — Revision Quiz, Quick Quiz, Reveal Answer
+# ============================================================
+
+async def revision_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for Revision Quiz button — show weak areas."""
+    query = update.callback_query
+    await query.answer()
+    weak_areas = _student_memory.get_weak_areas()
+    if not weak_areas:
+        await query.edit_message_text(
+            "No weak areas identified yet! Complete a few quizzes first to track your progress.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    keyboard = []
+    for area in weak_areas[:8]:
+        label = f"{area.get('topic', 'Topic')} — {area.get('concept', '')}"
+        cb = f"revision_select|{area.get('subject','math')}|{area.get('chapter',1)}|{area.get('topic','')}"
+        keyboard.append([InlineKeyboardButton(label[:60], callback_data=cb[:64])])
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="main_menu")])
+    await query.edit_message_text(
+        "📚 *Revision Recommended Topics*\n\nSelect a topic to revise:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+
+async def quick_quiz_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for Quick Quiz — show subject selection."""
+    query = update.callback_query
+    await query.answer()
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    await query.edit_message_text(
+        "✨ *Quick Quiz*\n\nChoose a subject:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📐 Mathematics", callback_data="quick_quiz_subject|math")],
+            [InlineKeyboardButton("🔬 Science", callback_data="quick_quiz_subject|science")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="main_menu")],
+        ]),
+        parse_mode="Markdown"
+    )
+
+
+async def reveal_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mom taps 'Reveal on TV' — emit evaluation to dashboard."""
+    query = update.callback_query
+    await query.answer("✅ Revealed on TV!")
+    parts = query.data.split("|")
+    if len(parts) < 3:
+        return
+    quiz_id = parts[1]
+    q_idx = int(parts[2])
+    chat_id = query.message.chat_id
+    session = _get_session(chat_id)
+    quiz = session.get("active_quiz", {})
+    evaluations = quiz.get("evaluations", {})
+    evaluation = evaluations.get(q_idx, {})
+    await emit_reveal_answer(quiz_id, q_idx, evaluation)
+
+    # Emit teaching agent message
+    questions = quiz.get("questions", [])
+    question = questions[q_idx] if q_idx < len(questions) else {}
+    topic = quiz.get("topic", "")
+    student_ctx = _student_memory.get_student_context_for_quiz(
+        quiz.get("subject", "math"),
+        quiz.get("chapter_num", 1),
+        topic
+    )
+    teaching_resp = await generate_teaching_message(
+        trigger="correct_answer" if evaluation.get("is_correct") else "wrong_answer",
+        topic=topic,
+        question_number=q_idx + 1,
+        total_questions=len(questions),
+        mastery_score=student_ctx.get("mastery_score", 50),
+        weak_concepts=student_ctx.get("weak_concepts", []),
+        question_text=question.get("question_text", ""),
+        student_answer=evaluation.get("student_answer_raw", ""),
+        evaluation_result=evaluation
+    )
+    await emit_teaching_message(teaching_resp["message"], teaching_resp["avatar_emotion"])
