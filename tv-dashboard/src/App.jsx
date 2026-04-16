@@ -5,6 +5,8 @@ import Header from './components/Header';
 import TopicTimeline from './components/TopicTimeline';
 import ActiveArea from './components/ActiveArea';
 import ProgressBar from './components/ProgressBar';
+import ViewToggle from './components/ViewToggle';
+import AnalyticsView from './components/AnalyticsView';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -19,10 +21,13 @@ function App() {
     topics,
     setTopics,
     newTopicId,
+    teachingMessages,
+    teachingEmotion,
   } = useSocket();
 
   const [student, setStudent] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [activeView, setActiveView] = useState('live');
 
   // Fetch initial profile data on mount
   useEffect(() => {
@@ -54,19 +59,19 @@ function App() {
   return (
     <div className="app-container">
       <Header student={student} connected={connected} />
-      
-      <div className="main-content">
-        <TopicTimeline topics={topics} newTopicId={newTopicId} progress={progress} />
-        <ActiveArea 
-          activeState={activeState}
-          quizData={quizData}
-          reviewData={reviewData}
-          visualData={visualData}
-          summaryData={summaryData}
-          lastTopic={lastTopic}
-        />
-      </div>
-
+      <ViewToggle activeView={activeView} onViewChange={setActiveView} />
+      {activeView === 'live' ? (
+        <div className="main-content">
+          <TopicTimeline topics={topics} newTopicId={newTopicId} progress={progress} />
+          <ActiveArea
+            activeState={activeState} quizData={quizData} reviewData={reviewData}
+            visualData={visualData} summaryData={summaryData} lastTopic={lastTopic}
+            teachingMessages={teachingMessages} teachingEmotion={teachingEmotion}
+          />
+        </div>
+      ) : (
+        <AnalyticsView />
+      )}
       <ProgressBar progress={progress} />
     </div>
   );

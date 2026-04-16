@@ -4,7 +4,10 @@ import sys
 import asyncio
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import json as _json
+from pathlib import Path as _Path
+from fastapi import FastAPI, HTTPException
+from backend.state.student_memory import StudentMemory as _StudentMemory
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
 
@@ -35,7 +38,8 @@ from telegram.ext import (
 )
 from backend.bot.handlers import (
     start_handler, photo_handler, voice_handler,
-    text_message_handler, callback_handler
+    text_message_handler, callback_handler,
+    revision_quiz_start, quick_quiz_select, reveal_answer_callback,
 )
 
 
@@ -63,9 +67,14 @@ def create_bot_app():
     # Text handler — quiz answers via text
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     
-    # Callback handler — inline keyboard buttons
+    # Specific callback handlers — registered before generic fallback
+    app.add_handler(CallbackQueryHandler(revision_quiz_start, pattern="^revision_quiz_start$"))
+    app.add_handler(CallbackQueryHandler(quick_quiz_select, pattern="^quick_quiz_select$"))
+    app.add_handler(CallbackQueryHandler(reveal_answer_callback, pattern="^reveal_answer\\|"))
+
+    # Callback handler — inline keyboard buttons (generic fallback)
     app.add_handler(CallbackQueryHandler(callback_handler))
-    
+
     return app
 
 
@@ -151,6 +160,97 @@ async def get_profile():
         "topics": profile["topic_history"],
         "progress": progress
     }
+
+
+@fastapi_app.get("/api/analytics/curriculum-timeline")
+async def get_curriculum_timeline():
+    try:
+        math_path = _Path("data/ncert_math_chapters.json")
+        science_path = _Path("data/ncert_science_chapters.json")
+        with open(math_path) as f:
+            math_meta = _json.load(f)
+        with open(science_path) as f:
+            science_meta = _json.load(f)
+        with open(_Path("data/child_profile.json")) as f:
+            profile = _json.load(f)
+        mem = _StudentMemory(_Path("data"))
+
+        def build_subject(chapters_meta_key, subject_str):
+            chapters_list = chapters_meta_key.get("chapters", [])
+            result = []
+            for ch in chapters_list:
+                ch_num = ch.get("number", ch.get("chapter_number", 0))
+                ch_name = ch.get("name", ch.get("title", ""))
+                topic_history = profile.get("topic_history", [])
+                quiz_history = profile.get("quiz_history", [])
+                topics_covered = [
+                    {"name": t.get("topic", ""), "date": t.get("date", "")}
+                    for t in topic_history
+                    if t.get("subject", "").lower() == subject_str.lower()
+                    and str(ch_num) in str(t.get("chapter", ""))
+                ]
+                quizzes = [
+                    {"quiz_id": q.get("id", ""), "date": q.get("date", ""), "score": q.get("score", 0)}
+                    for q in quiz_history
+                    if str(ch_num) in str(q.get("topic_id", ""))
+                ]
+                status = "tested_in_quiz" if quizzes else ("covered_in_class" if topics_covered else "not_started")
+                result.append({
+                    "chapter_number": ch_num,
+                    "name": ch_name,
+                    "status": status,
+                    "topics_covered": topics_covered,
+                    "quizzes": quizzes,
+                    "coverage_gaps": []
+                })
+            return result
+
+        return {
+            "math": build_subject(math_meta, "mathematics"),
+            "science": build_subject(science_meta, "science")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.get("/api/analytics/skill-profile")
+async def get_skill_profile_endpoint():
+    try:
+        mem = _StudentMemory(_Path("data"))
+        skill_profile = mem.get_skill_profile()
+        weak_areas = mem.get_weak_areas()
+        revision_recs = mem.get_revision_recommendations(n=5)
+        tm_data = _json.loads((_Path("data/student_memory/topic_mastery.json")).read_text())
+        scores = skill_profile["current_scores"]
+        sorted_skills = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return {
+            "current_scores": scores,
+            "score_history": skill_profile.get("score_history", []),
+            "topic_mastery": tm_data.get("topics", []),
+            "weak_areas": weak_areas,
+            "revision_recommendations": revision_recs,
+            "strength_summary": {
+                "strong": [s for s, v in sorted_skills[:3] if v >= 65],
+                "needs_work": [s for s, v in sorted_skills[-3:] if v < 65]
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.get("/api/analytics/quiz-detail/{quiz_id}")
+async def get_quiz_detail(quiz_id: str):
+    try:
+        quiz_log_path = _Path("data/student_memory/quiz_log.json")
+        quiz_log = _json.loads(quiz_log_path.read_text())
+        quiz = next((q for q in quiz_log["quizzes"] if q["quiz_id"] == quiz_id), None)
+        if not quiz:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        return quiz
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Mount Socket.IO on FastAPI ---

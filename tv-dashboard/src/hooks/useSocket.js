@@ -17,6 +17,9 @@ export function useSocket() {
   const [topics, setTopics] = useState([]);
   const [newTopicId, setNewTopicId] = useState(null);
   const socketRef = useRef(null);
+  const [teachingMessages, setTeachingMessages] = useState([]);
+  const [teachingEmotion, setTeachingEmotion] = useState('neutral');
+  const [revealedAnswers, setRevealedAnswers] = useState({});
 
   useEffect(() => {
     const socket = io(BACKEND_URL, {
@@ -144,9 +147,26 @@ export function useSocket() {
       setReviewData(null);
       setVisualData(null);
       setSummaryData(null);
+      setTeachingMessages([]);
+      setTeachingEmotion('neutral');
+      setRevealedAnswers({});
+    });
+
+    socket.on('teaching:message', (data) => {
+      setTeachingMessages(prev => [...prev, { text: data.message, emotion: data.emotion || 'neutral' }]);
+      setTeachingEmotion(data.emotion || 'neutral');
+    });
+    socket.on('teaching:emotion', (data) => {
+      setTeachingEmotion(data.emotion || 'neutral');
+    });
+    socket.on('quiz:reveal_answer', (data) => {
+      setRevealedAnswers(prev => ({ ...prev, [data.question_index]: data.evaluation }));
     });
 
     return () => {
+      socket.off('teaching:message');
+      socket.off('teaching:emotion');
+      socket.off('quiz:reveal_answer');
       socket.disconnect();
     };
   }, []);
@@ -161,5 +181,10 @@ export function useSocket() {
     topics,
     setTopics,
     newTopicId,
+    teachingMessages,
+    setTeachingMessages,
+    teachingEmotion,
+    setTeachingEmotion,
+    revealedAnswers,
   };
 }
