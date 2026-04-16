@@ -136,3 +136,92 @@ async def generate_quiz(subject: str, chapter: str, topic: str,
         "hint": "Look at the examples in your textbook",
         "difficulty": "easy"
     }]
+
+
+ADAPTIVE_QUIZ_PROMPT = """You are an expert CBSE Class 10 educator creating personalized quiz questions.
+
+SEED QUESTIONS (Reference — calibrate difficulty and format):
+{seed_questions_formatted}
+
+STUDENT CONTEXT:
+- Topic Mastery Score: {mastery_score}%
+- Weak Concepts: {weak_concepts}
+- Strong Concepts: {strong_concepts}
+- Highest Bloom Level Mastered: {bloom_level_reached}
+- Concepts Tested Before: {recently_tested_concepts}
+
+GENERATION REQUIREMENTS:
+- Create {generation_count} NEW quiz questions on topic: {topic} ({subject}, Chapter {chapter})
+- Do NOT repeat the seed questions above
+- Match difficulty and style of seed questions
+- Re-test weak concepts from DIFFERENT angles than seed questions
+- Bloom's taxonomy: only up to {bloom_level_reached} level
+- Mix MCQ and subjective questions
+
+Return ONLY valid JSON array, no markdown:
+[
+  {{
+    "type": "MCQ|VSA|SA|LA",
+    "marks": 1,
+    "question_text": "the question",
+    "options": ["A", "B", "C", "D"],
+    "correct_answer": "A or text answer",
+    "explanation": "detailed explanation",
+    "mom_explanation": "simpler explanation for parent",
+    "hint": "subtle hint",
+    "difficulty": "easy|medium|hard",
+    "bloom_level": "remember|understand|apply|analyze|evaluate|create",
+    "skill_tags": ["procedural_fluency"],
+    "concepts_tested": ["concept1"],
+    "adapted_for": "weak_concept_angle|strength_reinforcement|new_angle"
+  }}
+]"""
+
+
+async def generate_adaptive_questions(
+    subject: str,
+    chapter: int,
+    topic: str,
+    quiz_type: str,
+    seed_questions: list,
+    student_context: dict,
+    generation_count: int,
+) -> list:
+    """Generate new questions when banks are exhausted or language mismatch detected."""
+    if generation_count <= 0:
+        return []
+
+    seed_formatted = json.dumps([
+        {k: q.get(k) for k in ["question_text", "type", "difficulty", "bloom_level", "concepts"]}
+        for q in seed_questions[:3]
+    ], indent=2)
+
+    recently_tested = ", ".join(
+        c for a in student_context.get("recent_answers", [])[:5]
+        for c in a.get("concepts_tested", [])
+    ) or "none"
+
+    prompt = ADAPTIVE_QUIZ_PROMPT.format(
+        seed_questions_formatted=seed_formatted,
+        mastery_score=student_context.get("mastery_score", 50),
+        weak_concepts=", ".join(student_context.get("weak_concepts", [])) or "none",
+        strong_concepts=", ".join(student_context.get("strong_concepts", [])) or "none",
+        bloom_level_reached=student_context.get("bloom_level_reached", "apply"),
+        recently_tested_concepts=recently_tested,
+        generation_count=generation_count,
+        topic=topic,
+        subject=subject,
+        chapter=chapter
+    )
+
+    for attempt in range(3):
+        try:
+            raw = await call_gemini(prompt, response_mime_type="application/json")
+            questions = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(questions, list):
+                return questions
+        except Exception:
+            if attempt == 2:
+                return []
+            await asyncio.sleep(2 ** attempt)
+    return []
