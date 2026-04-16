@@ -7,7 +7,7 @@ import AvatarReaction from './AvatarReaction';
 import VisualExplainer from './VisualExplainer';
 import SummaryCard from './SummaryCard';
 
-export default function ActiveArea({ activeState, quizData, reviewData, visualData, summaryData, lastTopic }) {
+export default function ActiveArea({ activeState, quizData, reviewData, visualData, summaryData, lastTopic, teachingMessages, teachingEmotion }) {
   
   // Idle state
   if (activeState === 'idle') {
@@ -36,7 +36,7 @@ export default function ActiveArea({ activeState, quizData, reviewData, visualDa
   if (activeState === 'quiz') {
     return (
       <div className="active-area">
-        <QuizDisplay quizData={quizData} />
+        <QuizDisplay quizData={quizData} teachingMessages={teachingMessages} teachingEmotion={teachingEmotion} />
       </div>
     );
   }
@@ -45,7 +45,7 @@ export default function ActiveArea({ activeState, quizData, reviewData, visualDa
   if (activeState === 'review') {
     return (
       <div className="active-area">
-        {quizData && <QuizDisplay quizData={quizData} reviewData={reviewData} />}
+        {quizData && <QuizDisplay quizData={quizData} reviewData={reviewData} teachingMessages={teachingMessages} teachingEmotion={teachingEmotion} />}
       </div>
     );
   }

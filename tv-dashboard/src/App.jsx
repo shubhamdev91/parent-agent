@@ -19,6 +19,8 @@ function App() {
     topics,
     setTopics,
     newTopicId,
+    teachingMessages,
+    teachingEmotion,
   } = useSocket();
 
   const [student, setStudent] = useState(null);
@@ -57,13 +59,15 @@ function App() {
       
       <div className="main-content">
         <TopicTimeline topics={topics} newTopicId={newTopicId} progress={progress} />
-        <ActiveArea 
+        <ActiveArea
           activeState={activeState}
           quizData={quizData}
           reviewData={reviewData}
           visualData={visualData}
           summaryData={summaryData}
           lastTopic={lastTopic}
+          teachingMessages={teachingMessages}
+          teachingEmotion={teachingEmotion}
         />
       </div>
 

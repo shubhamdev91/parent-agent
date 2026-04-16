@@ -1288,3 +1288,63 @@ html, body, #root {
   from { opacity: 0; transform: translateX(-20px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* ── Teaching Agent Panel ── */
+.teaching-agent-panel {
+  width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(10,14,26,0.97) 0%, rgba(20,28,50,0.97) 100%);
+  border-left: 3px solid rgba(147,51,234,0.4);
+  border-radius: 10px 0 0 10px;
+  flex-shrink: 0;
+}
+.agent-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 25px 15px;
+  border-bottom: 2px solid rgba(147,51,234,0.2);
+}
+.agent-avatar-section .avatar-emoji {
+  font-size: 64px;
+  animation: emotionPop 0.4s ease-out;
+}
+@keyframes emotionPop {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.agent-name {
+  font-size: 18px;
+  font-weight: bold;
+  color: #9333ea;
+  margin-top: 8px;
+  letter-spacing: 1px;
+}
+.agent-chat-window {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-bubble {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(147,51,234,0.1);
+  border: 1px solid rgba(147,51,234,0.2);
+  border-radius: 10px;
+  animation: slideIn 0.3s ease-out;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bubble-emoji { font-size: 20px; flex-shrink: 0; }
+.bubble-text { font-size: 14px; color: #E5E7EB; line-height: 1.5; margin: 0; }
+.quiz-display-with-agent { display: flex; width: 100%; min-height: 100vh; }
+.quiz-main-area { flex: 1; overflow-y: auto; }
