@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile backend/*.py backend/*/*.py)",
+      "Bash(npm ls:*)",
+      "Bash(python3 -c \"import backend.main\")",
+      "Bash(python3 -c \"import backend.ai.router; print\\('router imported ok'\\)\")",
+      "Bash(git -C \"C:\\\\Users\\\\dell\\\\Documents\\\\Parent Agent\" status)",
+      "Bash(gh auth *)"
+    ]
+  }
+}
