@@ -16,14 +16,16 @@ class QuestionEvaluator:
         self._load_indices()
 
     def _load_indices(self):
-        qb_idx_path = self.qb_dir / "question_bank_index.json"
-        nb_idx_path = self.nb_dir / "novel_question_bank_index.json"
-        if qb_idx_path.exists():
-            with open(qb_idx_path, encoding="utf-8") as f:
-                self.qb_index = json.load(f)
-        if nb_idx_path.exists():
-            with open(nb_idx_path, encoding="utf-8") as f:
-                self.nb_index = json.load(f)
+        for path, attr in [
+            (self.qb_dir / "question_bank_index.json", "qb_index"),
+            (self.nb_dir / "novel_question_bank_index.json", "nb_index"),
+        ]:
+            if path.exists():
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        setattr(self, attr, json.load(f))
+                except (json.JSONDecodeError, OSError):
+                    pass
 
     def _iter_index_chapters(self, idx: Dict):
         """Yield chapter dicts from both subject-nested and flat index formats."""
@@ -54,7 +56,7 @@ class QuestionEvaluator:
         if ch_file:
             folder = "math" if "math" in subj_lower else "science"
             return folder in ch_file
-        return True  # can't determine — include by default
+        return False  # can't determine — exclude by default
 
     def _match_keywords_to_chapters(self, topic: str, subject: str) -> List[int]:
         """Return chapter numbers whose keywords match the topic string."""
@@ -67,7 +69,9 @@ class QuestionEvaluator:
                 # Match by chapter name
                 name = ch.get("chapter_name", ch.get("name", "")).lower()
                 if name and (name in topic_lower or topic_lower in name):
-                    matched.add(ch["chapter_number"])
+                    ch_num = ch.get("chapter_number")
+                    if ch_num is not None:
+                        matched.add(ch_num)
                     continue
                 # Match by keyword_triggers (actual field name in both indices)
                 keywords = [
@@ -76,7 +80,9 @@ class QuestionEvaluator:
                 ]
                 for kw in keywords:
                     if kw and (kw in topic_lower or topic_lower in kw):
-                        matched.add(ch["chapter_number"])
+                        ch_num = ch.get("chapter_number")
+                        if ch_num is not None:
+                            matched.add(ch_num)
                         break
         return list(matched)
 
